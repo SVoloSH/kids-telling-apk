@@ -1,0 +1,54 @@
+# Written by Kids Telling Import (src/github_apk.js): edit it there, not here.
+name: apk
+run-name: APK ${{ inputs.release }} (game ${{ inputs.branch }}) ${{ inputs.request }}
+on:
+  workflow_dispatch:
+    inputs:
+      release: { description: 'Import release: main or test', required: true, default: 'test' }
+      branch: { description: "Game branch: main or develop", required: true, default: 'develop' }
+      request: { description: 'Import request id', required: false, default: '' }
+permissions:
+  contents: write
+concurrency: { group: apk-${{ inputs.release }}, cancel-in-progress: true }
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      RELEASE: ${{ inputs.release }}
+      BRANCH: ${{ inputs.branch }}
+      GITLAB_READ_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}
+      DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the request
+        run: |
+          case "$RELEASE/$BRANCH" in main/main|test/develop) ;; *) echo "bad release/branch: $RELEASE/$BRANCH"; exit 1;; esac
+          [ -n "$GITLAB_READ_TOKEN" ] || { echo "Secret GITLAB_READ_TOKEN is missing (docs/KEYS.md in kids-telling-import)"; exit 1; }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Android SDK 35
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      - name: Code from GitLab
+        run: |
+          git clone --depth 1 "https://oauth2:$GITLAB_READ_TOKEN@gitlab.com/serykotyara/kids-telling-android.git" android
+          git clone --depth 1 --branch "$BRANCH" "https://oauth2:$GITLAB_READ_TOKEN@gitlab.com/serykotyara/kids-telling.git" kids-telling
+      - name: Same signature as the APKs built on the owner's computer (optional)
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then mkdir -p ~/.android && echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore; fi
+      - name: Release from Import, then Gradle
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          node scripts/fetch-release.mjs "$RELEASE"
+          chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+      - name: The APK on the release apk-$RELEASE
+        run: |
+          VERSION=$(node -p "require('./kids-telling/package.json').version")
+          mkdir -p out && cp android/app/build/outputs/apk/debug/app-debug.apk out/kids-telling.apk
+          echo "{\"version\":\"$VERSION\",\"release\":\"$RELEASE\",\"branch\":\"$BRANCH\",\"commit\":\"$(git -C kids-telling rev-parse --short HEAD)\",\"bytes\":$(stat -c %s out/kids-telling.apk)}" > out/apk.json
+          cat out/apk.json
+          gh release view "apk-$RELEASE" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || gh release create "apk-$RELEASE" -R "$GITHUB_REPOSITORY" --title "APK $RELEASE" --notes "Built by Kids Telling Import."
+          gh release upload "apk-$RELEASE" out/kids-telling.apk out/apk.json -R "$GITHUB_REPOSITORY" --clobber
