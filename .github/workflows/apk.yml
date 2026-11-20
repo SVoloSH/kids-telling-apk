@@ -9,7 +9,9 @@ on:
       request: { description: 'Import request id', required: false, default: '' }
 permissions:
   contents: write
-concurrency: { group: apk-${{ inputs.release }}, cancel-in-progress: true }
+concurrency:
+  group: "apk-${{ inputs.release }}"
+  cancel-in-progress: true
 jobs:
   apk:
     runs-on: ubuntu-latest
