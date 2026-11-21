@@ -40,6 +40,14 @@ jobs:
       - name: Same signature as the APKs built on the owner's computer (optional)
         run: |
           if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then mkdir -p ~/.android && echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore; fi
+      # Pictures and sounds never change at their address: the files of earlier builds are kept, only new ones are
+      # downloaded (owner, 2026-11-21; kids-telling-android scripts/fetch-release.mjs deletes what is no longer named).
+      - name: Files of earlier builds
+        uses: actions/cache@v4
+        with:
+          path: android/app/build/content-cache
+          key: apk-content-${{ inputs.release }}-${{ github.run_id }}
+          restore-keys: apk-content-${{ inputs.release }}-
       - name: Release from Import, then Gradle
         working-directory: android
         run: |
