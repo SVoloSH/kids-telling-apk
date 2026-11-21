@@ -15,7 +15,7 @@ concurrency:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     env:
       RELEASE: ${{ inputs.release }}
       BRANCH: ${{ inputs.branch }}
